@@ -22,8 +22,8 @@ trait ExtractionTest extends FunSuite {
   
   test("Assignment Example") {
     
-    val stationsFile = "/testStations.csv"
-    val tempsFile = "/testTemperatures.csv"
+    val stationsFile = "/extractionStations.csv"
+    val tempsFile = "/extractionTemperatures.csv"
     
     val expectedAll = Seq(
       (LocalDate.of(2015, 8, 11), Location(37.35, -78.433), 27.3),
@@ -35,15 +35,6 @@ trait ExtractionTest extends FunSuite {
       (Location(37.35, -78.433), 27.3),
       (Location(37.358, -78.438), 1.0)
     )
-    
-    val stations = Extraction.getStations(stationsFile)
-    stations.show()
-    
-    val temperatures = Extraction.getTemperatures(tempsFile)
-    temperatures.show()
-    
-    val joined = stations.join(temperatures, List("STN", "WBAN"))
-    joined.show
     
     val tempsIterable = Extraction.locateTemperatures(2015, stationsFile, tempsFile)
     printIterable(tempsIterable)

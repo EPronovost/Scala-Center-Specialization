@@ -19,22 +19,35 @@ package object sparkSetup {
   import spark.implicits._
 }
 
+package object timer {
+  private val timeMap = collection.mutable.Map[String, (Double, Int)]()
+  
+  def clear() = timeMap.clear()
+  
+  def timed[T](title: String)(body: =>T): T = {
+    var res: Option[T] = None
+    val totalTime = /*measure*/ {
+      val startTime = System.currentTimeMillis()
+      res = Some(body)
+      (System.currentTimeMillis() - startTime)
+    }
+    
+    timeMap.get(title) match {
+      case Some((total, num)) => timeMap(title) = (total + totalTime, num + 1)
+      case None => timeMap(title) = (totalTime, 1)
+    }
+    
+    //println(s"$title: ${totalTime} ms; avg: ${timeMap(title)._1 / timeMap(title)._2}")
+    res.get
+  }
+  
+  override def toString = {
+    timeMap map {
+      case (k, (total, num)) => s"$k : ${(total / num * 100).toInt / 100.0} ms ($num measurements)"
+    } mkString("\n")
+  }
+}
+
 object Main extends App {
-  val stationsFile = "/stations.csv"
-  val yearFile = "/2015.csv"
   
-  val temperatureLocations =
-    Extraction.locateTemperatures(2015, stationsFile, yearFile)
-  
-  println("Averaging temperatures")
-  
-  val averagedTemps =
-    Extraction.locationYearlyAverageRecords(temperatureLocations)
-  
-  println("Rendering visualization")
-  
-  val temperatureMap =
-    Visualization.visualize(averagedTemps, Visualization.colorScale)
-  
-  temperatureMap.output("images/tempMap.png")
 }

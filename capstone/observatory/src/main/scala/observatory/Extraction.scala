@@ -17,11 +17,7 @@ object Extraction {
   
   import sparkSetup._
   
-  private case class LocalDay(year: Int, month: Int, day: Int) {
-    def toLocalDate: LocalDate = LocalDate.of(year, month, day)
-  }
-  
-  def parseCsv(resource: String): RDD[Array[String]] = {
+  protected def parseCsv(resource: String): RDD[Array[String]] = {
     val inputStream = Extraction.getClass.getResourceAsStream(resource)
     val iterator = scala.io.Source.fromInputStream(inputStream).getLines()
   
@@ -35,7 +31,7 @@ object Extraction {
     *
     * @return The read stations DataFrame along with its column names.
     * */
-  def getStations(resource: String): DataFrame = {
+  protected def getStations(resource: String): DataFrame = {
   
     val stationsSchema = StructType(
       StructField("STN", StringType, true) ::
@@ -57,7 +53,7 @@ object Extraction {
     spark.createDataFrame(data, stationsSchema)
   }
   
-  def getTemperatures(resource: String): DataFrame = {
+  protected def getTemperatures(resource: String): DataFrame = {
   
     val temperatureSchema = StructType(
       StructField("STN", StringType, true) ::
@@ -124,5 +120,9 @@ object Extraction {
     locationYearlyAverageRecords(temperatureLocations)
   }
   
-  def main(args: Array[String])
+  def main(args: Array[String]): Unit = {
+    val temps = temperaturesForYear(2015)
+    
+    temps.take(30).foreach(println(_))
+  }
 }
