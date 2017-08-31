@@ -1,11 +1,11 @@
 package observatory
 
-import java.io.InputStream
+import java.io.{File, InputStream}
 import java.time.LocalDate
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.{DataFrame, Dataset, Row}
 
 import scala.collection.JavaConversions._
 import scala.util.Try
@@ -15,7 +15,25 @@ import scala.util.Try
   */
 object Extraction {
   
-  import sparkSetup._
+  import projectHelpers._
+  import spark.implicits._
+  
+  val stationsSchema = StructType(
+    StructField("STN", StringType, true) ::
+      StructField("WBAN", StringType, true) ::
+      StructField("Lat", new DecimalType(10, 6), true) ::
+      StructField("Lon", new DecimalType(10, 6), true) ::
+      Nil
+  )
+  
+  val temperatureSchema = StructType(
+    StructField("STN", StringType, true) ::
+      StructField("WBAN", StringType, true) ::
+      StructField("Month", IntegerType, true) ::
+      StructField("Day", IntegerType, true) ::
+      StructField("Temp", new DecimalType(10, 6), true) ::
+      Nil
+  )
   
   protected def parseCsv(resource: String): RDD[Array[String]] = {
     val inputStream = Extraction.getClass.getResourceAsStream(resource)
@@ -31,15 +49,7 @@ object Extraction {
     *
     * @return The read stations DataFrame along with its column names.
     * */
-  protected def getStations(resource: String): DataFrame = {
-  
-    val stationsSchema = StructType(
-      StructField("STN", StringType, true) ::
-        StructField("WBAN", StringType, true) ::
-        StructField("Lat", new DecimalType(10, 6), true) ::
-        StructField("Long", new DecimalType(10, 6), true) ::
-        Nil
-    )
+  protected def getStations(resource: String = "/stations.csv"): DataFrame = {
     
     def stationsRow(columns: Array[String]): Option[Row] = columns match {
       case Array(_, _, _, _, "") => stationsRow(columns.take(4))
@@ -54,15 +64,6 @@ object Extraction {
   }
   
   protected def getTemperatures(resource: String): DataFrame = {
-  
-    val temperatureSchema = StructType(
-      StructField("STN", StringType, true) ::
-        StructField("WBAN", StringType, true) ::
-        StructField("Month", IntegerType, true) ::
-        StructField("Day", IntegerType, true) ::
-        StructField("Temp", new DecimalType(10, 6), true) ::
-        Nil
-    )
   
     def convertTemp(d: BigDecimal): BigDecimal = d match {
       case _  if (d < 9999) => (d - 32) * 5.0 / 9.0
@@ -95,7 +96,7 @@ object Extraction {
     
     def rowMapper(r: Row): (LocalDate, Location, Double) =
       (LocalDate.of(year, r.getAs[Int]("Month"), r.getAs[Int]("Day")),
-      Location(r.getAs[java.math.BigDecimal]("Lat").doubleValue, r.getAs[java.math.BigDecimal]("Long").doubleValue),
+      Location(r.getAs[java.math.BigDecimal]("Lat").doubleValue, r.getAs[java.math.BigDecimal]("Lon").doubleValue),
       r.getAs[java.math.BigDecimal]("Temp").doubleValue)
     
     joinedDataFrame
@@ -114,15 +115,33 @@ object Extraction {
     ).mapValues(t => t._1 / t._2)
   }
   
-  def temperaturesForYear(year: Int): Iterable[(Location, Double)] = {
-    val temperatureLocations = locateTemperatures(year, "/stations.csv",
-      s"/$year.csv")
-    locationYearlyAverageRecords(temperatureLocations)
+  def temperaturesForYear(year: Int): Dataset[(Location, Double)] = {
+    
+    val file = new File(s"./target/yearTemps/$year.dat")
+    
+    if (file.exists()) {
+      spark.sparkContext.objectFile[(Location, Double)](file.getPath).toDS
+    }
+    else {
+      val stationsDataFrame: DataFrame = getStations() // ["STN", "WBAN", "Lat", "Lon"]
+      val temperatureDataFrame: DataFrame = getTemperatures(s"/$year.csv").select("STN", "WBAN", "Temp")
+      val joinedDataFrame = stationsDataFrame.join(temperatureDataFrame, List("STN", "WBAN")).select("Lat", "Lon", "Temp")
+  
+      val data = joinedDataFrame.groupBy("Lat", "Lon").avg("Temp").withColumnRenamed("avg(Temp)", "Temp")
+      
+      val result = data.map(r =>
+        (Location(r.getAs[java.math.BigDecimal]("Lat").doubleValue, r.getAs[java.math.BigDecimal]("Lon").doubleValue),
+          r.getAs[java.math.BigDecimal]("Temp").doubleValue))
+      
+      file.getParentFile.mkdirs
+      result.rdd.saveAsObjectFile(file.getPath)
+      result
+    }
   }
   
   def main(args: Array[String]): Unit = {
     val temps = temperaturesForYear(2015)
     
-    temps.take(30).foreach(println(_))
+    temps.show()
   }
 }
