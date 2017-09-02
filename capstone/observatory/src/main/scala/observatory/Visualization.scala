@@ -1,12 +1,11 @@
 package observatory
 
-import com.sksamuel.scrimage.{Image, Pixel}
-import Math._
 import java.io.File
+import java.lang.Math._
 
-import org.apache.spark.sql.{DataFrame, Dataset}
+import com.sksamuel.scrimage.{Image, Pixel}
+import org.apache.spark.sql.Dataset
 
-import scala.collection.immutable.HashSet
 import scala.collection.parallel.{ParIterable, ParSeq}
 
 /**
@@ -24,7 +23,7 @@ object Visualization {
   val EarthRadius: Double = 6371
   protected val DisplayWidth: Int = 360
   protected val DisplayHeight: Int = 180
-  protected val InterpolationPower: Double = 2
+  protected val InterpolationPower: Double = 5
   
   val colorScale: Seq[(Double, Color)] = Seq(
     (60, Color(255, 255, 255)),
@@ -45,9 +44,8 @@ object Visualization {
   
   /** https://en.wikipedia.org/wiki/Great-circle_distance */
   protected def greatCircleDistance(p1: Location, p2: Location): Double =
-    EarthRadius * acos(sin(degreesToRadians(p1.lat)) * sin(degreesToRadians(p2.lat)) +
-      cos(degreesToRadians(p1.lat)) * cos(degreesToRadians(p2.lat)) *
-        cos(degreesToRadians(abs(p1.lon - p2.lon))))
+    EarthRadius * acos(p1.latRadSin * p2.latRadSin +
+      p1.latRadCos * p2.latRadCos * cos(p1.lonRad - p2.lonRad))
   
   // Required Milestone Methods
   
@@ -191,7 +189,7 @@ object Visualization {
   
   def parPredictTemperature(temperatures: ParIterable[(Location, Double)],
                             location: Location,
-                            distanceCutoff: Double = EarthRadius / DisplayWidth): Double = {
+                            distanceCutoff: Double = 1.0): Double = {
     val distancedTemps =
       temperatures.map({ case (loc, temp) => (greatCircleDistance(loc, location), temp) })
     

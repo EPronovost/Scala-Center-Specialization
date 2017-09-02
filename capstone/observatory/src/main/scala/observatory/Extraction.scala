@@ -1,6 +1,6 @@
 package observatory
 
-import java.io.{File, InputStream}
+import java.io.File
 import java.time.LocalDate
 
 import org.apache.spark.rdd.RDD
@@ -120,23 +120,31 @@ object Extraction {
     val file = new File(s"./target/yearTemps/$year.dat")
     
     if (file.exists()) {
-      spark.sparkContext.objectFile[(Location, Double)](file.getPath).toDS
+      val loaded = spark.sparkContext.objectFile[(Location, Double)](file.getPath).toDS
+      if (loaded.count > 0) return loaded
+      else {
+        def delete(f: File) {
+          if (f.isDirectory)
+            Option(f.listFiles).map(_.toList).getOrElse(Nil).foreach(delete(_))
+          f.delete
+        }
+        delete(file)
+      }
     }
-    else {
-      val stationsDataFrame: DataFrame = getStations() // ["STN", "WBAN", "Lat", "Lon"]
-      val temperatureDataFrame: DataFrame = getTemperatures(s"/$year.csv").select("STN", "WBAN", "Temp")
-      val joinedDataFrame = stationsDataFrame.join(temperatureDataFrame, List("STN", "WBAN")).select("Lat", "Lon", "Temp")
-  
-      val data = joinedDataFrame.groupBy("Lat", "Lon").avg("Temp").withColumnRenamed("avg(Temp)", "Temp")
-      
-      val result = data.map(r =>
-        (Location(r.getAs[java.math.BigDecimal]("Lat").doubleValue, r.getAs[java.math.BigDecimal]("Lon").doubleValue),
-          r.getAs[java.math.BigDecimal]("Temp").doubleValue))
-      
-      file.getParentFile.mkdirs
-      result.rdd.saveAsObjectFile(file.getPath)
-      result
-    }
+    
+    val stationsDataFrame: DataFrame = getStations() // ["STN", "WBAN", "Lat", "Lon"]
+    val temperatureDataFrame: DataFrame = getTemperatures(s"/$year.csv").select("STN", "WBAN", "Temp")
+    val joinedDataFrame = stationsDataFrame.join(temperatureDataFrame, List("STN", "WBAN")).select("Lat", "Lon", "Temp")
+
+    val data = joinedDataFrame.groupBy("Lat", "Lon").avg("Temp").withColumnRenamed("avg(Temp)", "Temp")
+    
+    val result = data.map(r =>
+      (Location(r.getAs[java.math.BigDecimal]("Lat").doubleValue, r.getAs[java.math.BigDecimal]("Lon").doubleValue),
+        r.getAs[java.math.BigDecimal]("Temp").doubleValue))
+    
+    file.getParentFile.mkdirs
+    result.rdd.saveAsObjectFile(file.getPath)
+    result
   }
   
   def main(args: Array[String]): Unit = {
